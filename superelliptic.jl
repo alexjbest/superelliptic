@@ -261,7 +261,6 @@ function HRedMatrix(t, iota, a, h, R1PolMatH, pts = [])
 # resM = M_H^{t,\iota}(s)
 # resD = d_H^{t,\iota}(s)
 #
-    println(t, iota, a, h, R1PolMatH)
     R1Pol = parent(h)
     s = gen(R1Pol)
 
@@ -377,18 +376,13 @@ function HReduce(i, iota, mu_, genM, genD, M_, D_, p, R1ModH)
         res *= Evaluate(genM, R1(p*l-b))
         d = evaluate(genD, R1(p*l-b))
         res = R1ModH([ R1(divexact(res[1,m],d)) for m in 1:b ])
-        println(">>>>>>>>");
-        println(res);
         res *= M_[l]
         res *= inv(D_[l])
-        println(res);
         res *= Evaluate(genM, R1((l-1)*p))
         res *= inv(evaluate(genD,R1((l-1)*p)))
-        println(res);
         if ((l-1)-i-1 >= 0)
             res[1,1] += mu_[(l-1)-i]
         end
-        println(res);
     end
 
     return res
@@ -540,8 +534,6 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
 
     Rt,t3 = PolynomialRing(ZZ,'t')
     h = lift_fq_to_qadic_poly(R1Pol, hbar)
-    println(h)
-    println(">>>>>>>>>>>>>>>>>>>>>>")
 
     # Step 1: Horizontal reduction
     R1MatH = MatrixSpace(R1, b, b)
@@ -602,8 +594,6 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
 
             # approximate frobenius action
             mu_ = ScalarCoefficients(j, k, a, hk, p, q, N)
-            println("mu")
-            println(mu_)
 
             # reduce
             wH_[k+1][j] = [ HReduce(i, iota, mu_, genM, genD, M_,
@@ -680,7 +670,6 @@ function ZetaFunction(a, hbar)#(a::RngIntElt, hbar::RngUPolElt)
     # Step 2: Determine absolute Frobenius action mod precision
     M = AbsoluteFrobeniusAction(a, hbar, N)
 
-    println(M);
     # Step 3: Determine Frobenius action mod precision
     MM = deepcopy(M)
     for i in 1:n-1
@@ -693,13 +682,11 @@ function ZetaFunction(a, hbar)#(a::RngIntElt, hbar::RngUPolElt)
         # Multiply
         M = M * MM
     end
-    println(M);
 
     # Step 4: Determine L polynomial
     ZPol,t = PolynomialRing(ZZ,"t")
     #CP = charpoly(PolynomialRing(base_ring(M),"t")[1],M::MatElem{RingElem})
     CP = invoke(charpoly, Tuple{Ring, Union{MatElem{Nemo.nmod},Generic.Mat}},  PolynomialRing(base_ring(M),"t")[1], M)
-    println(CP)
     Chi = cast_poly_nmod(ZPol, CP)
     L = numerator(t^(2*g)*(Chi)(1//t))
     coeff_ = [ coeff(L, i) for i in 0:(2*g) ]
@@ -719,3 +706,25 @@ function ZetaFunction(a, hbar)#(a::RngIntElt, hbar::RngUPolElt)
     return L // (q*t^2 - (q+1)*t + 1)
 end
 
+
+
+function is_weil(p, sqrtq)
+    (discriminant(p) == 0) && error("Polynomial not squarefree, so root-finding is hard?")
+
+
+    prec = 100
+    rts = []
+    while true
+        R = AcbPolyRing(AcbField(prec),:x)
+        try
+            rts = roots(R(p))
+            break
+        catch e
+            prec *= 2
+        end
+    end
+    Q = base_ring(R)
+
+    return all([overlaps(abs(a),abs(Q(sqrtq)^(-1))) for a in rts])
+
+end
