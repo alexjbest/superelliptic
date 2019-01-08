@@ -56,6 +56,14 @@ function lift_elem(ei)
     return lift(FmpzPolyRing(:x), ei)
 end
 
+function lift_elem(ei::Nemo.padic)
+    return lift(ZZ, ei)
+end
+
+function lift_elem(ei::Nemo.fmpq)
+    return ei
+end
+
 function lift_elem(ei::Nemo.gfp_elem)
     return ei.data
 end

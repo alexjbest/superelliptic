@@ -25,6 +25,7 @@
 #*****************************************************************************
 
 include("linearrecurrence.jl")
+import AbstractAlgebra.RelSeriesElem
 import AbstractAlgebra.Ring
 import AbstractAlgebra.Generic
 
@@ -79,7 +80,7 @@ function Block(j,a)
 #    - ``a`` - a finite cardinal
 
     if (j >= 0)
-        return a -  mod(j, a)
+        return a - mod(j, a)
     else
         return mod(-j, a)
     end
@@ -143,7 +144,7 @@ function RSCombination(h)
             end
         end
     end
-    try 
+    try
       Mi = inv(M)
     catch e
       _Mi, _d = pseudo_inv(lift(M))
@@ -251,7 +252,7 @@ function CastBaseMatrix(R, M)
     return res
 end
 
-function HRedMatrix(t, iota, a, h, R1PolMatH, pts = [])
+function HRedMatrix(t, iota, a, h, R1PolMatH, pts)
 # given row index t and block index iota,
 # the equation of the curve (via a,h)
 # return the horizontal reduction matrix
@@ -280,6 +281,11 @@ function HRedMatrix(t, iota, a, h, R1PolMatH, pts = [])
     end
     for i = 1:b
         resM[b,i] = c_[i]
+    end
+    for i = 1:length(pts)
+        resM[b,b+i] = -a*(pts[i][2])^(-(iota-a))
+        resM[b+i, b+i] = (resD)*pts[i][1]
+
     end
 
     return resM, resD
@@ -330,7 +336,7 @@ R0PolMatH)
                 c = one(R0)
                 for i = 1:N
                     tempD_[l] = tempD_[l] + taylor_[i]*c
-                    c = c*l
+                    c = c*l # Ideally we should be able to write c*l here?
                 end
             end
             # matrix
@@ -347,7 +353,7 @@ R0PolMatH)
                 c = one(R0)
                 for i = 1:N
                     tempM_[l] = tempM_[l] + taylor_[i]*c
-                    c = c*l
+                    c = c*ZZ(l) # Ideally we should be able to write c*l here?
                 end
             end
         end
@@ -358,11 +364,10 @@ R0PolMatH)
     return resM_, resD_
 end
 
-function HReduce(i, iota, mu_, genM, genD, M_, D_, p, R1ModH)
+function HReduce(i, b, iota, mu_, genM, genD, M_, D_, p, R1ModH)
 # reduces the differential T_{(i,j),k} horizontally
 #
     R1 = base_ring(R1ModH)
-    b = R1ModH.cols
 
     res = zero(R1ModH)
 
@@ -375,7 +380,7 @@ function HReduce(i, iota, mu_, genM, genD, M_, D_, p, R1ModH)
         end
         res *= Evaluate(genM, R1(p*l-b))
         d = evaluate(genD, R1(p*l-b))
-        res = R1ModH([ R1(divexact(res[1,m],d)) for m in 1:b ])
+        res = R1ModH([ R1(divexact(res[1,m],d)) for m in 1:R1ModH.cols ])
         res *= M_[l]
         res *= inv(D_[l])
         res *= Evaluate(genM, R1((l-1)*p))
@@ -388,7 +393,7 @@ function HReduce(i, iota, mu_, genM, genD, M_, D_, p, R1ModH)
     return res
 end
 
-function VRedMatrixSeq(j, a, h, r_, s_, p, N, R1MatV, R1PolMatV)
+function VRedMatrixSeq(j, a, h, r_, s_, p, N, R1MatV, R1PolMatV, pts)
 # Given the data to compute the generic reduction matrix
 # (and its denominator) of the iota-th block,
 # return the matrix sequences needed for vertical reduction, i.e.
@@ -410,13 +415,19 @@ function VRedMatrixSeq(j, a, h, r_, s_, p, N, R1MatV, R1PolMatV)
     iota = Block(-p*j, a)
 
     genM = zero(R1PolMatV)
-    c_ = [  ] #R1Pol
-    for i = 0:b-2
-        c_ = [ (a*t + iota-a)*coeff(r_[i+1], m) +
-              a*coeff(derivative(s_[i+1]), m) for m in 0:(b-2) ]
+    for i = 1:b-1
         for m = 1:b-1
-            genM[i+1,m] = c_[m]
+            genM[i,m] = (a*t + iota-a)*coeff(r_[i], m-1) +
+                  a*coeff(derivative(s_[i]), m-1)
         end
+    end
+    for m = 1:length(pts)
+        for i = 1:b-1
+            genM[i,m+b-1] = -a*evaluate(s_[i], pts[m][1])*(pts[m][2])^(iota-a)
+        end
+
+        genM[b-1+m, b-1+m] = (a*t +iota-a)*(pts[m][2])^(-a)
+
     end
     resM_ = LinearRecurrence(transpose(genM), L_, R_, DDi, slr)
     resM_ = [ transpose(resM_[m]) for m in 1:length(resM_) ]
@@ -439,13 +450,14 @@ function VReduce(i, j, a, h, wH_, M_, D_, R1ModV)
     b = degree(h)
     N = length(wH_)
 
-    res = R1ModV([ wH_[N][ j][ i+1][1,m] for m in 2:b ])
+    res = R1ModV([ wH_[N][j][i+1][1,m] for m in 2:R1ModV.cols+1 ])
 
     for k = (N-1):-1:1
         res *= M_[k+1]
         d = D_[k+1]
-        res = R1ModV([ R1(divexact(res[1,m], d)) for m in 1:(b-1) ])
-        res = R1ModV([ wH_[k][j][i+1][1,m] + res[1,m-1] for m in 2:b ])
+        res = R1ModV([ R1(divexact(res[1,m], d)) for m in 1:R1ModV.cols ])
+        # Add new term
+        res = R1ModV([ wH_[k][j][i+1][1,m] + res[1,m-1] for m in 2:R1ModV.cols+1 ])
     end
 
     res *= M_[1]
@@ -454,14 +466,6 @@ function VReduce(i, j, a, h, wH_, M_, D_, R1ModV)
     return res
 end
 
-#function PFrobeniusAction(a, hbar, N)#(a::RngIntElt, hbar::RngUPolElt, N::RngIntElt)\
-#-> AlgMatElt
-#
-#   Provided for backwards compatibility. Use "AbsoluteFrobeniusAction"
-#   instead.
-#
-#    return AbsoluteFrobeniusAction(a, hbar, N)
-#end
 function lift_fq_to_qadic(R, a)
     if typeof(a) <: Union{<: ResElem, Nemo.gfp_elem}
         return R(lift_elem(a))
@@ -479,7 +483,33 @@ function lift_fq_to_qadic_poly(R::PolyRing, f)
     return R([lift_fq_to_qadic(base_ring(R), coeff(f, i)) for i in 0:degree(f)])
 end
 
-function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::RngIntElt)\
+function AbsoluteFrobeniusAction(a, hbar, N, pts = [])
+    K = base_ring(hbar)
+    p = convert(Int64,characteristic(K))
+    n = degree(K)
+
+    if n == 1
+        if fits(Int64, ZZ(p)^(N+1))
+            R0 = ResidueRing(ZZ, p^N)
+            R1 = ResidueRing(ZZ, p^(N+1))
+        else
+            R0 = ResidueRing(ZZ, ZZ(p)^N)
+            R1 = ResidueRing(ZZ, ZZ(p)^(N+1))
+        end
+    else
+        R0 = QadicField(p, n, N)
+        R1 = QadicField(p, n, N + 1)
+    end
+    R0Pol,t1 = PolynomialRing(R0,'t')
+    R1Pol,t2 = PolynomialRing(R1,'t')
+
+
+    h = lift_fq_to_qadic_poly(R1Pol, hbar)
+
+    return AbsoluteFrobeniusActionOnLift(a, h, N, p, n, pts)
+end
+
+function AbsoluteFrobeniusActionOnLift(a, h, N, p, n, pts = [])#(a::RngIntElt, hbar::RngUPolElt,N::RngIntElt)\
 #-> AlgMatElt
 #
 #   Implements [1, Algorithm 1]
@@ -502,23 +532,24 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
 #   The complexity is O( p^(1/2) n MM(g) N^(5/2) + \log(p)ng^4N^4 )
 #
     # Step 0: Setup
-    K = base_ring(hbar)
-    p = convert(Int64,characteristic(K))
-    q = order(K)
-    n = degree(K)
-    b = degree(hbar)
+    q = p^n
+    b = degree(h)
+    l = length(pts)
 
     # Check user input
     #(! IsFinite(K)) && error("The curve must be defined over a finite field.")
-    #(! IsSeparable(hbar)) && error("The current implementation only supports squarefree hbar.")
-    (gcd(a,b) != 1) && error("The current implementation needs a and the degree of hbar to be coprime.")
+    #(! IsSeparable(h)) && error("The current implementation only supports squarefree h.")
+    (gcd(a,b) != 1) && error("The current implementation needs a and the degree of h to be coprime.")
     (a < 2) && error("Please enter an integer a > 1.")
-    (b < 2) && error("Please enter a polynomial hbar of degree > 1.")
+    (b < 2) && error("Please enter a polynomial h of degree > 1.")
     (N < 1) && error("Please enter a positive precision N")
     (p <= (a*N-1)*b) && error("Characteristic too small", (a*N - 1)*b)
 
     if n == 1
-        if fits(Int64, ZZ(p)^(N+1))
+        if true
+            R0 = PadicField(p, N)
+            R1 = PadicField(p, N + 1)
+        elseif fits(Int64, ZZ(p)^(N+1))
             R0 = ResidueRing(ZZ, p^N)
             R1 = ResidueRing(ZZ, p^(N+1))
         else
@@ -533,13 +564,15 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
     R1Pol,t2 = PolynomialRing(R1,'t')
 
     Rt,t3 = PolynomialRing(ZZ,'t')
-    h = lift_fq_to_qadic_poly(R1Pol, hbar)
+    h = cast_poly_nmod(R1Pol,h)
+
+    pts = [(R1(P[1]),R1(P[2])) for P in pts]
 
     # Step 1: Horizontal reduction
-    R1MatH = MatrixSpace(R1, b, b)
-    R1ModH = MatrixSpace(R1, 1, b)
-    R1PolMatH = MatrixSpace(R1Pol, b, b)
-    R0PolMatH = MatrixSpace(R0Pol, b, b)
+    R1MatH = MatrixSpace(R1, b + l, b + l)
+    R1ModH = MatrixSpace(R1, 1, b + l)
+    R1PolMatH = MatrixSpace(R1Pol, b + l, b + l)
+    R0PolMatH = MatrixSpace(R0Pol, b + l, b + l)
 
     wH_ = [ [ [] for j in 1:(a-1) ] for k in 0:(N-1) ]
     # stores the results of the reduction
@@ -586,7 +619,7 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
             @assert( -(t*a+iota) == -p*(a*k+j) )
 
             # generic reduction matrix
-            genM, genD = HRedMatrix(t, iota, a, h, R1PolMatH)
+            genM, genD = HRedMatrix(t, iota, a, h, R1PolMatH, pts)
 
             # reduction matrix sequences: evaluation
             M_, D_ = HRedMatrixSeq(genM, genD, L_, R_, DDi, slr,
@@ -596,16 +629,17 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
             mu_ = ScalarCoefficients(j, k, a, hk, p, q, N)
 
             # reduce
-            wH_[k+1][j] = [ HReduce(i, iota, mu_, genM, genD, M_,
+            wH_[k+1][j] = [ HReduce(i, b, iota, mu_, genM, genD, M_,
                                    D_, p, R1ModH) for i in 0:(b-2) ]
         end
         hk *= hFrob
     end
 
+
     # Step 2: Vertical reduction
-    R1MatV = MatrixSpace(R1, b-1, b-1)
-    R1ModV = MatrixSpace(R1, 1, b-1)
-    R1PolMatV = MatrixSpace(R1Pol, b-1, b-1)
+    R1MatV = MatrixSpace(R1, b-1 + l, b-1 + l)
+    R1ModV = MatrixSpace(R1, 1, b-1 + l)
+    R1PolMatV = MatrixSpace(R1Pol, b-1 + l, b-1 + l)
     wV_ = [ [] for j in 1:(a-1) ]
     # stores the results of the reduction
     # wV_[j,i+1] = w_{(i,j)}
@@ -622,7 +656,7 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
     for j = 1:a-1
         # reduction matrix sequences: evaluation
         M_, D_ = VRedMatrixSeq(j, a, h, r_, s_, p, N,
-                                R1MatV, R1PolMatV)
+                                R1MatV, R1PolMatV, pts)
 
         # reduce
         wV_[j] = [ VReduce(i, j, a, h, wH_, M_, D_, R1ModV) for i in 0:(b-2) ]
@@ -639,7 +673,24 @@ function AbsoluteFrobeniusAction(a, hbar,N)#(a::RngIntElt, hbar::RngUPolElt,N::R
         end
     end
 
-    return res
+    # Return just the matrix of frobenius if we have no points
+    if l == 0
+        return res
+    end
+
+    # Get the evaluations
+
+    R0ColMat = MatrixSpace(R0, (a-1)*(b-1), l)
+    col = zero(R0ColMat)
+    for j = 1:a-1
+        for i = 0:b-2
+            for m = 1:l
+                col[((j-1)*(b-1) +i+1), m] = R0(lift_elem(wV_[j][i+1][1,(b-1+m)]))
+            end
+        end
+    end
+
+    return res,col
 end
 
 function ZetaFunction(a, hbar)#(a::RngIntElt, hbar::RngUPolElt)
@@ -708,7 +759,7 @@ end
 
 
 
-function is_weil(p, sqrtq)
+function IsWeil(p, sqrtq)
     (discriminant(p) == 0) && error("Polynomial not squarefree, so root-finding is hard?")
 
 
@@ -726,5 +777,76 @@ function is_weil(p, sqrtq)
     Q = base_ring(R)
 
     return all([overlaps(abs(a),abs(Q(sqrtq)^(-1))) for a in rts])
+
+end
+
+function Nemo.root(a::Nemo.padic, n::Int)
+    return exp(log(a)//n)
+end
+
+function FrobeniusLift(a, h, p, P)
+    # TODO only padic rn I gues?
+    return ((P[1])^p,
+            P[2]^p * root(1 + (h(P[1]^p) - h(P[1])^p)//(P[2]^(a*p)), a))
+
+end
+
+function Generic.derivative(x::RelSeriesElem{T}) where {T <: RingElement}
+   xlen = pol_length(x)
+   xval = valuation(x)
+   xprec = precision(x)
+   z = parent(x)()
+   if 1 >= xlen + xval
+      set_prec!(z, max(0, xprec - 1))
+      set_val!(z, max(0, xprec - 1))
+   else
+      zlen = min(xlen + xval - 1, xlen)
+      fit!(z, zlen)
+      set_prec!(z, max(0, xprec - 1))
+      set_val!(z, max(0, xval - 1))
+      for i = 1:zlen
+          z = setcoeff!(z, i - 1, (i + xval + xlen - zlen - 1) * polcoeff(x, i + xlen  - zlen - 1))
+      end
+      renormalize!(z)
+   end
+   return z
+end
+
+function Generic.integral(x::RelSeriesElem{T}) where {T <: RingElement}
+   xlen = pol_length(x)
+   if xlen == 0
+      z = zero(parent(x))
+      set_prec!(z, precision(x) + 1)
+      set_val!(z, valuation(x) + 1)
+      return z
+   end
+   z = parent(x)()
+   fit!(z, xlen)
+   set_prec!(z, precision(x) + 1)
+   set_val!(z, valuation(x) + 1)
+   for i = 1:xlen
+       z = setcoeff!(z, i - 1,  polcoeff(x, i - 1) // base_ring(x)(i + valuation(x)))
+   end
+   return z
+end
+
+function LocalIntegral(F, x, y)
+
+end
+
+function TinyColemanIntegrals(a, h, N, p, n, x, y)
+    return 
+
+end
+
+function ColemanIntegrals(a, h, N, p, n, x, y = :inf)
+    if y != :inf
+        A,B = ColemanIntegrals(a, h, N, p, n, x, :inf) , ColemanIntegrals(a, h, N, p, n, y, :inf)
+        return A - B
+    end
+
+    M, C = AbsoluteFrobeniusActionOnLift(a, h, N, p, n, [x])
+
+    return inv(M - 1) * (C - TinyColemanIntegrals(a, h, N, p, n, x, FrobeniusLift(x)))
 
 end
